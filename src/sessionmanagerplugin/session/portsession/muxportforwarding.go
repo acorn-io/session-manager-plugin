@@ -61,6 +61,9 @@ type MuxPortForwarding struct {
 	session        session.Session
 	muxClient      *MuxClient
 	mgsConn        *MgsConn
+	ctx            context.Context
+	cancel         context.CancelFunc
+	listener       net.Listener
 }
 
 func (c *MgsConn) close() {
@@ -87,7 +90,9 @@ func (p *MuxPortForwarding) Stop() {
 		p.muxClient.close()
 	}
 	p.cleanUp()
-	os.Exit(0)
+
+	p.listener.Close()
+	p.cancel()
 }
 
 // InitializeStreams initializes i/o streams
@@ -104,7 +109,7 @@ func (p *MuxPortForwarding) InitializeStreams(log log.T, agentVersion string) (e
 
 // ReadStream reads data from different connections
 func (p *MuxPortForwarding) ReadStream(log log.T) (err error) {
-	g, ctx := errgroup.WithContext(context.Background())
+	g, ctx := errgroup.WithContext(p.ctx)
 
 	// reads data from smux client and transfers to server over datachannel
 	g.Go(func() error {
@@ -249,6 +254,7 @@ func (p *MuxPortForwarding) handleClientConnections(log log.T, ctx context.Conte
 		displayMsg = fmt.Sprintf("Port %s opened for sessionId %s.", p.portParameters.LocalPortNumber, p.sessionId)
 	}
 
+	p.listener = listener
 	defer listener.Close()
 
 	log.Infof(displayMsg)
