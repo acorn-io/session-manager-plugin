@@ -22,9 +22,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/aws/session-manager-plugin/src/config"
-
 	"github.com/aws/aws-sdk-go/service/ssm"
+	"github.com/aws/session-manager-plugin/src/config"
 	"github.com/aws/session-manager-plugin/src/datachannel"
 	"github.com/aws/session-manager-plugin/src/log"
 	"github.com/aws/session-manager-plugin/src/message"
@@ -86,17 +85,19 @@ type Session struct {
 	DisplayMode           sessionutil.DisplayMode
 }
 
-//startSession create the datachannel for session
+// startSession create the datachannel for session
 var startSession = func(session *Session, log log.T) error {
-	return session.Execute(log)
+	return session.Execute(nil, log)
 }
 
-//setSessionHandlersWithSessionType set session handlers based on session subtype
-var setSessionHandlersWithSessionType = func(session *Session, log log.T) error {
+// setSessionHandlersWithSessionType set session handlers based on session subtype
+var setSessionHandlersWithSessionType = func(session *Session, plugin ISessionPlugin, log log.T) error {
 	// SessionType is set inside DataChannel
-	sessionSubType := SessionRegistry[session.SessionType]
-	sessionSubType.Initialize(log, session)
-	return sessionSubType.SetSessionHandlers(log)
+	// Acorn change: initialize port session at runtime instead of reusing the same session
+	// the method can be called in multiple places so it can't be shared as global variable
+
+	plugin.Initialize(log, session)
+	return plugin.SetSessionHandlers(log)
 }
 
 // Set up a scheduler to listen on stream data resend timeout event
@@ -209,8 +210,8 @@ func ValidateInputAndStartSession(args []string, out io.Writer) {
 	}
 }
 
-//Execute create data channel and start the session
-func (s *Session) Execute(log log.T) (err error) {
+// Execute create data channel and start the session
+func (s *Session) Execute(plugin ISessionPlugin, log log.T) (err error) {
 	fmt.Fprintf(os.Stdout, "\nStarting session with SessionId: %s\n", s.SessionId)
 
 	// sets the display mode
@@ -230,7 +231,7 @@ func (s *Session) Execute(log log.T) (err error) {
 	} else {
 		s.SessionType = s.DataChannel.GetSessionType()
 		s.SessionProperties = s.DataChannel.GetSessionProperties()
-		if err = setSessionHandlersWithSessionType(s, log); err != nil {
+		if err = setSessionHandlersWithSessionType(s, plugin, log); err != nil {
 			log.Errorf("Session ending with error: %v", err)
 			return
 		}
